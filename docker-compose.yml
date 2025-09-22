@@ -1,0 +1,94 @@
+# Docker Compose لخدمة الأدمن - نائبك.كوم
+# Naebak Admin Service Development Environment
+
+version: '3.8'
+
+services:
+  # خدمة الأدمن
+  admin-service:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://naebak_admin:naebak_password@db:5432/naebak_admin_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-secret-key-here
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    depends_on:
+      - db
+      - redis
+    command: python manage.py runserver 0.0.0.0:8000
+
+  # قاعدة البيانات PostgreSQL
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=naebak_admin_db
+      - POSTGRES_USER=naebak_admin
+      - POSTGRES_PASSWORD=naebak_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis للتخزين المؤقت
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Celery Worker للمهام غير المتزامنة
+  celery-worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://naebak_admin:naebak_password@db:5432/naebak_admin_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-secret-key-here
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    depends_on:
+      - db
+      - redis
+    command: celery -A admin_service worker -l info
+
+  # Celery Beat للمهام المجدولة
+  celery-beat:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://naebak_admin:naebak_password@db:5432/naebak_admin_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-secret-key-here
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    depends_on:
+      - db
+      - redis
+    command: celery -A admin_service beat -l info
+
+  # Flower لمراقبة Celery
+  flower:
+    build: .
+    ports:
+      - "5555:5555"
+    environment:
+      - DATABASE_URL=postgresql://naebak_admin:naebak_password@db:5432/naebak_admin_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-secret-key-here
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    command: celery -A admin_service flower
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_volume:
